@@ -1,0 +1,14 @@
+# Prism — runtime dependencies
+fastapi==0.128.8
+uvicorn[standard]==0.39.0
+httpx==0.28.1              # async HTTP client for provider adapters (per-call timeouts)
+sqlalchemy[asyncio]==2.0.44
+aiosqlite==0.21.0          # default store: SQLite
+pydantic==2.12.4
+pydantic-settings==2.13.0
+numpy==2.3.4               # cosine similarity for the semantic cache
+fastembed==0.7.4           # local ONNX sentence embeddings (no PyTorch, no API key)
+
+# Optional: only needed when DATABASE_URL points at Postgres
+# asyncpg==0.30.0
+# pgvector==0.4.2

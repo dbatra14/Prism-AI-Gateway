@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism — Ops Console</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e9ef;
+    --muted: #8b93a7; --accent: #6ea8fe; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --line: #e2e5eb; --text: #1b1f27;
+      --muted: #6b7280; --accent: #2563eb; --ok: #16a34a; --warn: #b45309; --bad: #dc2626;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .nav-link { color: var(--accent); text-decoration: none; }
+  .spacer { flex: 1; }
+  input, select, button {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; display: grid; gap: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .card, section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .card .value { font-size: 26px; font-weight: 600; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  section > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--muted); margin: 0 0 12px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; border: 1px solid var(--line); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .reason { max-width: 380px; white-space: normal; color: var(--muted); font-size: 12px; }
+  #error { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prism <span>ops console</span></h1>
+  <a class="nav-link" href="/console/chat.html">Try Prism</a>
+  <div class="spacer"></div>
+  <label class="muted" for="token">admin token</label>
+  <input id="token" type="password" size="20" value="prism-admin-token">
+  <select id="keyFilter"><option value="">all keys</option></select>
+  <button id="refresh">Refresh</button>
+  <label class="muted"><input type="checkbox" id="auto" checked> auto</label>
+  <span id="error"></span>
+</header>
+
+<main>
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>Tenants — spend against budget</h2>
+    <div class="scroll"><table id="keys"></table></div>
+  </section>
+
+  <section>
+    <h2>Providers</h2>
+    <div class="scroll"><table id="providers"></table></div>
+  </section>
+
+  <section>
+    <h2>Recent requests</h2>
+    <div class="scroll"><table id="logs"></table></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtUsd = (n) => "$" + Number(n || 0).toFixed(6);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// Rejections are the interesting rows, so each reason gets its own colour.
+const STATUS_CLASS = {
+  ok: "ok", cache_hit: "ok",
+  rejected_auth: "bad", rejected_budget: "bad", upstream_error: "bad", gateway_overloaded: "bad",
+  rejected_rate_limit: "warn", rejected_allowlist: "warn",
+  rejected_unknown_model: "warn", rejected_invalid: "warn",
+};
+
+async function api(path, params = {}) {
+  const url = new URL(path, location.origin);
+  Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v));
+  const response = await fetch(url, { headers: { "X-Admin-Token": $("token").value } });
+  if (!response.ok) throw new Error(`${path} → ${response.status}`);
+  return response.json();
+}
+
+function table(el, columns, rows) {
+  el.innerHTML =
+    "<thead><tr>" + columns.map(c => `<th>${c.label}</th>`).join("") + "</tr></thead>" +
+    "<tbody>" + (rows.length ? rows.map(r =>
+      "<tr>" + columns.map(c => `<td class="${c.cls || ""}">${c.render(r)}</td>`).join("") + "</tr>"
+    ).join("") : `<tr><td colspan="${columns.length}" class="muted">No data yet.</td></tr>`) +
+    "</tbody>";
+}
+
+function renderCards(usage, cache, keys) {
+  const budget = keys.reduce((sum, k) => sum + k.monthly_budget_usd, 0);
+  const cards = [
+    { label: "Requests", value: usage.requests ?? 0, sub: "this month" },
+    { label: "Spend", value: fmtUsd(usage.cost_usd), sub: `of ${fmtUsd(budget)} budgeted` },
+    { label: "Tokens", value: ((usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0)).toLocaleString(),
+      sub: `${(usage.prompt_tokens ?? 0).toLocaleString()} in / ${(usage.completion_tokens ?? 0).toLocaleString()} out` },
+    { label: "Cache hit rate", value: ((cache.hit_rate ?? 0) * 100).toFixed(1) + "%",
+      sub: `${cache.hits ?? 0} hits / ${cache.misses ?? 0} misses` },
+    { label: "Cache entries", value: cache.entries ?? 0, sub: "stored prompts" },
+  ];
+  $("cards").innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div>
+     <div class="value">${c.value}</div><div class="sub">${esc(c.sub)}</div></div>`
+  ).join("");
+}
+
+function renderKeys(keys) {
+  table($("keys"), [
+    { label: "Team", render: k => esc(k.team) },
+    { label: "Key", render: k => `<code class="muted">${esc(k.virtual_key)}</code>` },
+    { label: "Allowed", render: k => k.model_allowlist.map(m => `<span class="pill">${esc(m)}</span>`).join(" ") },
+    { label: "RPM", cls: "num", render: k => k.requests_per_minute },
+    { label: "Requests", cls: "num", render: k => k.requests_this_period },
+    { label: "Spend / budget", render: k => {
+        const pct = k.monthly_budget_usd ? Math.min(100, (k.spent_usd / k.monthly_budget_usd) * 100) : 0;
+        const cls = pct >= 100 ? "bad" : pct > 80 ? "warn" : "";
+        return `<span class="${cls}">${fmtUsd(k.spent_usd)}</span> <span class="muted">/ ${fmtUsd(k.monthly_budget_usd)}</span>
+                <div class="bar"><i style="width:${pct}%"></i></div>`;
+      } },
+    { label: "Cache", render: k => k.cache_enabled
+        ? `<span class="ok">on</span> <span class="muted">@ ${k.cache_similarity_threshold}</span>`
+        : `<span class="muted">off</span>` },
+  ], keys);
+}
+
+function renderProviders(health) {
+  table($("providers"), [
+    { label: "Provider", render: p => esc(p.provider) },
+    { label: "Status", render: p => `<span class="${p.status === "healthy" ? "ok" : p.status === "degraded" ? "warn" : "bad"}">${p.status}</span>` },
+    { label: "Requests", cls: "num", render: p => p.requests_in_window },
+    { label: "Error rate", cls: "num", render: p => (p.error_rate * 100).toFixed(1) + "%" },
+    { label: "Avg ms", cls: "num", render: p => p.avg_latency_ms },
+    { label: "Max ms", cls: "num", render: p => p.max_latency_ms },
+  ], health.providers);
+}
+
+function renderLogs(logs) {
+  table($("logs"), [
+    { label: "Time", render: r => esc((r.created_at || "").slice(11, 19)) },
+    { label: "Team key", render: r => `<code class="muted">${esc((r.virtual_key || "—").slice(0, 22))}</code>` },
+    { label: "Asked", render: r => esc(r.requested_model) },
+    { label: "Served", render: r => r.resolved_model
+        ? esc(`${r.resolved_provider}/${r.resolved_model}`) + (r.fallback ? ' <span class="warn">fallback</span>' : "")
+        : '<span class="muted">—</span>' },
+    { label: "Status", render: r => `<span class="${STATUS_CLASS[r.status] || ""}">${esc(r.status)}</span>` },
+    { label: "Cache", render: r => r.cache === "hit" ? '<span class="ok">hit</span>' : '<span class="muted">miss</span>' },
+    { label: "Tokens", cls: "num", render: r => `${r.prompt_tokens}/${r.completion_tokens}` },
+    { label: "Cost", cls: "num", render: r => fmtUsd(r.cost_usd) },
+    { label: "ms", cls: "num", render: r => r.latency_ms },
+    { label: "Routing / notes", render: r => `<div class="reason">${esc(r.route_reason || "")}</div>` },
+  ], logs);
+}
+
+async function refresh() {
+  const key = $("keyFilter").value;
+  try {
+    const [usage, cache, keys, health, logs] = await Promise.all([
+      api("/admin/usage", { key }), api("/admin/cache/stats", { key }),
+      api("/admin/keys"), api("/admin/providers/health"),
+      api("/admin/logs", { key, limit: 40 }),
+    ]);
+
+    if ($("keyFilter").options.length === 1) {
+      keys.keys.forEach(k => $("keyFilter").add(new Option(`${k.team} (${k.virtual_key})`, k.virtual_key)));
+    }
+
+    renderCards(usage, cache, keys.keys);
+    renderKeys(keys.keys);
+    renderProviders(health);
+    renderLogs(logs.logs);
+    $("error").textContent = "";
+  } catch (err) {
+    $("error").textContent = err.message.includes("401")
+      ? "Unauthorized — check the admin token." : err.message;
+  }
+}
+
+$("refresh").onclick = refresh;
+$("keyFilter").onchange = refresh;
+$("token").onchange = refresh;
+setInterval(() => { if ($("auto").checked) refresh(); }, 3000);
+refresh();
+</script>
+</body>
+</html>
