@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism — Try the Gateway</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e9ef;
+    --muted: #8b93a7; --accent: #6ea8fe; --ok: #4ade80; --bad: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --line: #e2e5eb; --text: #1b1f27;
+      --muted: #6b7280; --accent: #2563eb; --ok: #16a34a; --bad: #dc2626;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 17px; margin: 0; }
+  h1 span, .muted { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+  a { color: var(--accent); text-decoration: none; }
+  main { max-width: 840px; margin: 0 auto; padding: 32px 24px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  h2 { margin: 0 0 6px; font-size: 20px; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0 12px; }
+  label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
+  select, textarea, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 10px; }
+  textarea { width: 100%; min-height: 130px; resize: vertical; }
+  button { background: var(--accent); border-color: var(--accent); color: #081427; cursor: pointer; font-weight: 700; padding: 10px 18px; }
+  button:disabled { cursor: wait; opacity: .65; }
+  .answer { margin-top: 20px; min-height: 150px; white-space: pre-wrap; }
+  .empty { color: var(--muted); }
+  .metadata { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pill { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; padding: 3px 8px; }
+  .error { color: var(--bad); margin-top: 12px; }
+  .note { margin-top: 18px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 560px) { .controls { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prism <span>try the gateway</span></h1>
+  <div class="spacer"></div>
+  <a href="/console/">Ops console</a>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Ask Prism</h2>
+    <p class="muted">Send a prompt through the local AI gateway and view the answer below.</p>
+    <div class="controls">
+      <label>Demo key
+        <select id="key">
+          <option value="prism-sk-search-1a2b3c">Search team — cache enabled</option>
+          <option value="prism-sk-research-4d5e6f">Research team — fast, smart, auto</option>
+          <option value="prism-sk-free-7g8h9i">Free tier — lower request limit</option>
+        </select>
+      </label>
+      <label>Model routing
+        <select id="model">
+          <option value="fast">Fast</option>
+          <option value="smart">Smart</option>
+          <option value="auto">Auto</option>
+        </select>
+      </label>
+    </div>
+    <label for="prompt">Your question</label>
+    <textarea id="prompt" placeholder="Ask a question, for example: Explain what an API gateway does.">Explain what an API gateway does.</textarea>
+    <p><button id="send">Send message</button></p>
+    <div id="error" class="error" role="alert"></div>
+  </section>
+
+  <section class="card answer" aria-live="polite">
+    <h2>Answer</h2>
+    <div id="content" class="empty">Your response will appear here.</div>
+    <div id="metadata" class="metadata"></div>
+  </section>
+
+  <p class="note">This page uses whichever provider Prism is configured to run. Open the <a href="/console/">Ops console</a> to see the request, routing, cost, and cache result.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function headerPill(label, value) {
+  return `<span class="pill">${label}: ${value || "—"}</span>`;
+}
+
+$("send").onclick = async () => {
+  const prompt = $("prompt").value.trim();
+  if (!prompt) {
+    $("error").textContent = "Enter a question first.";
+    return;
+  }
+
+  const button = $("send");
+  button.disabled = true;
+  button.textContent = "Thinking…";
+  $("error").textContent = "";
+  $("content").className = "empty";
+  $("content").textContent = "Waiting for Prism…";
+  $("metadata").innerHTML = "";
+
+  try {
+    const response = await fetch("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${$("key").value}`,
+      },
+      body: JSON.stringify({
+        model: $("model").value,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
+
+    $("content").className = "";
+    $("content").textContent = body?.choices?.[0]?.message?.content || "The provider returned no text.";
+    $("metadata").innerHTML = [
+      headerPill("Provider", response.headers.get("x-prism-provider")),
+      headerPill("Cache", response.headers.get("x-prism-cache")),
+      headerPill("Cost", response.headers.get("x-prism-cost-usd")),
+    ].join("");
+  } catch (error) {
+    $("content").textContent = "Your response will appear here.";
+    $("error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Send message";
+  }
+};
+
+$("prompt").addEventListener("keydown", event => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") $("send").click();
+});
+</script>
+</body>
+</html>

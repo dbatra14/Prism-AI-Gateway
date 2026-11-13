@@ -1,0 +1,25 @@
+# Environment
+.venv/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Prism's local store (recreated and reseeded on every startup)
+prism.db
+prism.db-wal
+prism.db-shm
+
+# Embedding model cache (~130MB, downloaded on first run)
+.fastembed_cache/
+local_cache/
+.cache/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
