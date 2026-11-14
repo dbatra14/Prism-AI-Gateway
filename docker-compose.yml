@@ -1,0 +1,63 @@
+# Prism AI Gateway — gateway + two OpenAI-compatible mock providers.
+#
+#   docker compose up --build          # mock mode, no API key needed
+#   docker compose up -d               # detached
+#   docker compose down                # stop
+#
+# OpenRouter mode: put this in a local .env next to this file and rerun
+# `docker compose up` — the same lines the local .env already uses:
+#
+#   OPENROUTER_API_KEY=your-valid-key-here
+#   PRISM_GATEWAY_CONFIG_PATH=data/gateway_config.openrouter.sample.json
+#
+# Never commit .env or share the key.
+
+services:
+  gateway:
+    build: .
+    image: prism-ai-gateway
+    environment:
+      # Compose fills these from .env when present; otherwise mock mode.
+      PRISM_GATEWAY_CONFIG_PATH: ${PRISM_GATEWAY_CONFIG_PATH:-data/gateway_config.docker.json}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      PRISM_ADMIN_TOKEN: ${PRISM_ADMIN_TOKEN:-prism-admin-token}
+      PRISM_DATABASE_URL: ${PRISM_DATABASE_URL:-sqlite+aiosqlite:////app/store/prism.db}
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persists the ~130MB embedding model across restarts.
+      - prism-model-cache:/app/.cache
+      - prism-db:/app/store
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - mock-alpha
+      - mock-beta
+
+  mock-alpha:
+    image: prism-ai-gateway
+    command: ["python", "scripts/mock_provider.py", "--port", "9001", "--name", "alpha"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mock-beta:
+    image: prism-ai-gateway
+    command: ["python", "scripts/mock_provider.py", "--port", "9002", "--name", "beta"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  prism-model-cache:
+  prism-db:

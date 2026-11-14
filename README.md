@@ -40,7 +40,7 @@ is what makes this more than a proxy:
 
 ## Contents
 
-- [Quick start](#quick-start) · [The five-minute demo](#the-five-minute-demo) · [Submission guide](docs/SUBMISSION.md)
+- [Quick start](#quick-start) · [Run with Docker](#run-with-docker-no-python-setup) · [The five-minute demo](#the-five-minute-demo) · [Submission guide](docs/SUBMISSION.md)
 - [How a request flows](#how-a-request-flows) · [Reading the code](#reading-the-code)
 - [API reference](#api-reference)
 - [Design decisions](#design-decisions): [rate limiting](#1-rate-limiting-without-over-admission) ·
@@ -99,6 +99,67 @@ routing decision. The admin token is `prism-admin-token`.
 
 No database to install: Prism uses SQLite by default and creates `prism.db` on
 startup. Point `PRISM_DATABASE_URL` at Postgres to switch. See `.env.example`.
+
+### Run with Docker (no Python setup)
+
+Prefer containers? One image runs the gateway and both mock providers, and
+`docker compose up` wires them together — no venv, no host Python, no key.
+
+```bash
+docker compose up --build
+```
+
+That starts:
+
+| Container | Role | Port |
+|---|---|---|
+| `gateway` | the Prism API, chat console, ops console | 8080 (published) |
+| `mock-alpha` | mock provider `alpha` | internal |
+| `mock-beta` | mock provider `beta` | internal |
+
+By default this is **mock mode**: `PRISM_GATEWAY_CONFIG_PATH` defaults to
+`data/gateway_config.docker.json` (same shape as the sample config, but the
+providers are reached by compose service names instead of `localhost`). The
+only difference from the local run is that ports 9001/9002 stay internal.
+
+Verify it the same way:
+
+```bash
+curl -s localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer prism-sk-research-4d5e6f" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"fast","messages":[{"role":"user","content":"What is a message queue?"}]}' -D-
+```
+
+**Switching to real OpenRouter responses** — put the usual two lines in a
+local `.env` next to `docker-compose.yml` (or reuse the one you already have
+in the repo root):
+
+```env
+OPENROUTER_API_KEY=your-valid-key-here
+PRISM_GATEWAY_CONFIG_PATH=data/gateway_config.openrouter.sample.json
+```
+
+Then `docker compose up -d` again. Compose reads `.env` automatically and
+passes both values to the gateway container only — the mock providers never
+see the key. Remove the key from `.env` (or run
+`PRISM_GATEWAY_CONFIG_PATH=data/gateway_config.docker.json docker compose up`)
+to go back to mock mode.
+
+**What the stack persists and how it stays safe:**
+
+- `prism-model-cache` volume — the ~130MB embedding model, downloaded once;
+  restarts are instant afterwards.
+- `prism-db` volume — the SQLite database at `/app/store/prism.db`, so usage,
+  cache, and log data survive `docker compose down` (wipe with
+  `docker compose down -v` to get the freshly-seeded demo state back).
+- The image runs as a non-root user (`prism`, uid 10001) and
+  `.dockerignore` excludes `.env`, databases, and dev-only files, so no
+  secret or local artifact can end up in a published image.
+- Healthchecks gate all three containers; `gateway` waits for the providers.
+
+Stop with `docker compose down` (data volumes are kept). To rebuild after
+code changes: `docker compose up --build`.
 
 ### Seeded demo tenants
 
