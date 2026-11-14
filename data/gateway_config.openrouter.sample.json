@@ -1,0 +1,18 @@
+{
+  "_comment": "Copy the path setting from .env.example into .env and add your own OPENROUTER_API_KEY. Never put a real key in this file.",
+  "providers": [
+    {
+      "name": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "models": ["openai/gpt-4o-mini", "openai/gpt-4o", "google/gemini-2.0-flash-001"]
+    }
+  ],
+  "model_aliases": {
+    "fast": { "primary": "openai/gpt-4o-mini", "fallbacks": ["google/gemini-2.0-flash-001"] },
+    "smart": { "primary": "openai/gpt-4o", "fallbacks": ["google/gemini-2.0-flash-001"] },
+    "auto": { "route_by_difficulty": { "simple": "fast", "complex": "smart" } }
+  },
+  "retry": { "max_attempts": 2, "initial_backoff_ms": 300, "backoff_multiplier": 2 },
+  "degradation": { "error_rate_threshold": 0.5, "window_seconds": 60, "p95_latency_ms": 5000 }
+}

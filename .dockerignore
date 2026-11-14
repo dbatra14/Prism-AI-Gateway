@@ -1,0 +1,28 @@
+# Secrets — never bake these into an image
+.env
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Local development artifacts
+.venv/
+.cache/
+.fastembed_cache/
+local_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+
+# Git and editor noise
+.git/
+.DS_Store
+
+# Docs and dev-only data stay out of the image to keep it small;
+# docs/ is still readable on GitHub.
+docs/
+tests/
+scripts/load_test.py
+scripts/routing_eval.py
+data/routing_eval.jsonl
