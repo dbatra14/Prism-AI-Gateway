@@ -40,7 +40,7 @@ is what makes this more than a proxy:
 
 ## Contents
 
-- [Quick start](#quick-start) · [Run with Docker](#run-with-docker-no-python-setup) · [The five-minute demo](#the-five-minute-demo) · [Submission guide](docs/SUBMISSION.md)
+- [Quick start](#quick-start) · [Run with Docker](#run-with-docker-no-python-setup) · [The five-minute demo](#the-five-minute-demo) · [Demo video walkthrough](docs/DEMO_VIDEO.md) · [Submission guide](docs/SUBMISSION.md)
 - [How a request flows](#how-a-request-flows) · [Reading the code](#reading-the-code)
 - [API reference](#api-reference)
 - [Design decisions](#design-decisions): [rate limiting](#1-rate-limiting-without-over-admission) ·
